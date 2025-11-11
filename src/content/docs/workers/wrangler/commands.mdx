@@ -330,6 +330,10 @@ None of the options for this command are required. Also, many can be set in your
 
 <Render file="wrangler-commands/global-flags" product="workers" />
 
+### Capturing deployment output
+
+When you deploy a Worker, you can capture deployment information in a structured format by setting the [`WRANGLER_OUTPUT_FILE_PATH`](/workers/wrangler/system-environment-variables/#supported-environment-variables) or [`WRANGLER_OUTPUT_FILE_DIRECTORY`](/workers/wrangler/system-environment-variables/#supported-environment-variables) environment variables. This writes deployment metadata (including worker name, version ID, and deployment URLs) to a file in [ND-JSON](https://github.com/ndjson/ndjson-spec) format, which is useful for CI/CD pipelines and automation tools.
+
 ---
 
 ## `delete`
@@ -1099,6 +1103,10 @@ Your site is deployed to `<PROJECT_NAME>.pages.dev`. If you do not provide the `
 
 :::
 
+#### Capturing deployment output
+
+When you deploy a Pages project, you can capture deployment information in a structured format by setting the [`WRANGLER_OUTPUT_FILE_PATH`](/workers/wrangler/system-environment-variables/#supported-environment-variables) or [`WRANGLER_OUTPUT_FILE_DIRECTORY`](/workers/wrangler/system-environment-variables/#supported-environment-variables) environment variables. This writes deployment metadata (including project name, deployment ID, and deployment URL) to a file in [ND-JSON](https://github.com/ndjson/ndjson-spec) format, which is useful for CI/CD pipelines and automation tools.
+
 ### `secret put`
 
 Create or update a secret for a Pages project.
@@ -1324,6 +1332,10 @@ description="Retrieve details for the 10 most recent versions. Details include `
     headingLevel={3}
 
 />
+
+### Capturing version output
+
+When you upload or deploy a version, you can capture version information in a structured format by setting the [`WRANGLER_OUTPUT_FILE_PATH`](/workers/wrangler/system-environment-variables/#supported-environment-variables) or [`WRANGLER_OUTPUT_FILE_DIRECTORY`](/workers/wrangler/system-environment-variables/#supported-environment-variables) environment variables. This writes version metadata (including worker name, version ID, and preview URLs for uploads, or deployment information for deploys) to a file in [ND-JSON](https://github.com/ndjson/ndjson-spec) format, which is useful for CI/CD pipelines and automation tools.
 
 ### `secret put`
 
