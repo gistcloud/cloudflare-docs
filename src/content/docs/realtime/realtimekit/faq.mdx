@@ -3,7 +3,7 @@ pcx_content_type: navigation
 title: FAQ
 slug: realtime/realtimekit/faq
 sidebar:
-  order: 10
+  order: 11
 ---
 
 import { Details } from "~/components";
@@ -16,6 +16,11 @@ Follow the [Create API token guide](/fundamentals/api/get-started/create-token/)
 When configuring permissions, ensure that **Realtime** / **Realtime Admin** permissions are selected.
 Configure any additional [access policies and restrictions](/fundamentals/api/reference/permissions/) as needed for your use case.
 
+</Details>
+
+<Details header="Are there any rate limits or scaling limits for RealtimeKt?">
+	Please refer to our [Rate Limits](/realtime/realtimekit/rate-limits/) page for
+	more information.
 </Details>
 
 ### Meetings
@@ -34,9 +39,6 @@ A common approach is:
 </Details>
 
 <Details header="How do I prevent participants from joining a meeting after a specific date or time?">
-
-You can disable the meeting at the required time by setting its status to `INACTIVE` using a `PATCH` request to the
-[Update Meeting](/api/resources/realtime_kit/subresources/meetings/methods/update_meeting_by_id/) endpoint.
 
 This prevents participants from joining the meeting and prevents any new Sessions from starting.
 
