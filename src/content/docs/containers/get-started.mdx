@@ -113,10 +113,6 @@ max_instances = 10
 class_name = "MyContainer"
 image = "./Dockerfile"
 
-[[durable_objects.bindings]]
-name = "MY_CONTAINER"
-class_name = "MyContainer"
-
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MyContainer"]
@@ -131,6 +127,7 @@ Important points about this config:
 - `max_instances` declares the maximum number of simultaneously running container instances
   that will run.
 - The Durable Object must use [`new_sqlite_classes`](/durable-objects/best-practices/access-durable-objects-storage/#create-sqlite-backed-durable-object-class) not `new_classes`.
+- You do not need to configure a Durable Object binding explicitly. Access the class via `ctx.exports.MyContainer` using [automatic loopback bindings](/changelog/2025-09-26-ctx-exports/).
 
 ### The Container Image
 
@@ -202,7 +199,7 @@ When a request enters Cloudflare, your Worker's [`fetch` handler](/workers/runti
 
   ```js
   if (pathname.startsWith("/container")) {
-  	const container = env.MY_CONTAINER.getByName(pathname);
+  	const container = ctx.exports.MyContainer.getByName(pathname);
   	return await container.fetch(request);
   }
   ```
@@ -213,7 +210,7 @@ When a request enters Cloudflare, your Worker's [`fetch` handler](/workers/runti
 
   ```js
   if (pathname.startsWith("/lb")) {
-  	const container = await getRandom(env.MY_CONTAINER, 3);
+  	const container = await getRandom(ctx.exports.MyContainer, 3);
   	return await container.fetch(request);
   }
   ```

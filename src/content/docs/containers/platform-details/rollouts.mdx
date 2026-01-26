@@ -34,10 +34,6 @@ image = "./Dockerfile"
 rollout_active_grace_period = 300
 rollout_step_percentage = [10, 100]
 
-[[durable_objects.bindings]]
-name = "MY_CONTAINER"
-class_name = "MyContainer"
-
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["MyContainer"]
