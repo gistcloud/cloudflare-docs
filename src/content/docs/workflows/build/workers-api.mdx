@@ -152,6 +152,89 @@ export type WorkflowStepConfig = {
 
 Refer to the [documentation on sleeping and retrying](/workflows/build/sleeping-and-retrying/) to learn more about how Workflows are retried.
 
+## Rollback (Saga Pattern)
+
+Workflows supports the [saga pattern](https://microservices.io/patterns/data/saga.html) for handling distributed transactions. When a workflow throws an uncaught error, you can automatically roll back previously completed steps by executing compensating actions (undo functions) in reverse order (LIFO - last-in, first-out).
+
+To enable automatic rollback, pass a `rollback` configuration when creating the workflow instance. When an uncaught error occurs, all registered undo functions will execute automatically before the workflow enters the errored state.
+
+### step.withRollback
+
+{/* prettier-ignore */}
+- <code>step.withRollback&lt;T&gt;(name: string, handler: RollbackHandler&lt;T&gt;, config?: RollbackStepConfig): Promise&lt;T&gt;</code>
+  - `name` - the name of the step.
+  - `handler` - an object containing `do` and `undo` functions.
+  - `config` (optional) - configuration for the step, optionally including separate `undoConfig` for the undo function.
+
+### RollbackHandler
+
+```ts
+export type RollbackHandler<T> = {
+  do: () => Promise<T>;
+  undo: (err: unknown, value: T) => Promise<void>;
+};
+```
+
+### RollbackStepConfig
+
+```ts
+export type RollbackStepConfig = WorkflowStepConfig & {
+  undoConfig?: WorkflowStepConfig;
+};
+```
+
+### RollbackConfig
+
+```ts
+export type RollbackConfig = {
+  /** If true, continue executing remaining undos after a failure and throw AggregateError at end. Default: false */
+  continueOnError?: boolean;
+};
+```
+
+Pass this configuration to `workflow.create()` to enable automatic rollback on uncaught errors:
+
+```ts
+let instance = await env.MY_WORKFLOW.create({
+  params: { userId: "123", items: ["item1", "item2"] },
+  rollback: { continueOnError: true }, // Enable auto-rollback
+});
+```
+
+### Example
+
+<TypeScriptExample>
+
+```ts
+export class OrderWorkflow extends WorkflowEntrypoint<Env, Params> {
+  async run(event: WorkflowEvent<Params>, step: WorkflowStep) {
+    const order = await step.withRollback("create order", {
+      do: async () => env.DB.orders.insert({ userId: event.payload.userId, items: event.payload.items }),
+      undo: async (err, order) => env.DB.orders.delete(order.id),
+    });
+
+    await step.withRollback("charge payment", {
+      do: async () => env.STRIPE.charges.create({ amount: order.total, customer: event.payload.userId }),
+      undo: async (err, charge) => env.STRIPE.refunds.create({ charge: charge.id }),
+    });
+
+    // If this step throws, the undo functions above will run automatically
+    // (in reverse order) if the instance was created with rollback config enabled
+    await step.do("send confirmation", async () => {
+      await env.EMAIL.send({ to: event.payload.email, template: "order-confirmed", orderId: order.id });
+    });
+  }
+}
+
+// Creating the workflow instance with rollback enabled:
+// const instance = await env.MY_WORKFLOW.create({
+//   params: orderParams,
+//   rollback: { continueOnError: false }, // Stop on first undo failure
+// });
+```
+
+</TypeScriptExample>
+
 ## NonRetryableError
 
 {/* prettier-ignore */}
@@ -378,8 +461,16 @@ interface WorkflowInstanceCreateOptions {
 	 * The event payload the Workflow instance is triggered with
 	 */
 	params?: unknown;
+	/**
+	 * Enable automatic rollback on uncaught errors.
+	 * When enabled, all registered undo functions will execute in LIFO order
+	 * if the workflow throws an uncaught error.
+	 */
+	rollback?: RollbackConfig;
 }
 ```
+
+Refer to the [Rollback (Saga Pattern)](#rollback-saga-pattern) section for details on `RollbackConfig`.
 
 ## WorkflowInstance
 
@@ -443,9 +534,10 @@ Restart a Workflow instance.
 
 ### terminate
 
-Terminate a Workflow instance.
+Terminate a Workflow instance. Optionally run rollback handlers before terminating.
 
-- <code>terminate(): Promise&lt;void&gt;</code>
+- <code>terminate(options?: TerminateOptions): Promise&lt;void&gt;</code>
+  - `options.rollback` (optional) - if `true`, execute all registered undo handlers before terminating. Only works for `running`, `waiting`, or `paused` instances.
 
 ### sendEvent
 
@@ -500,6 +592,7 @@ type InstanceStatus = {
 		| "complete"
 		| "waiting" // instance is hibernating and waiting for sleep or event to finish
 		| "waitingForPause" // instance is finishing the current work to pause
+		| "rollingBack" // rollback in progress (manual or via terminate with rollback)
 		| "unknown";
 	error?: { 
 		name: string,
