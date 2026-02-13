@@ -1,0 +1,247 @@
+---
+pcx_content_type: how-to
+title: /crawl - Crawl web content
+sidebar:
+  order: 11
+  badge: Beta
+---
+
+import { Render } from "~/components";
+
+The `/crawl` endpoint automates the process of scraping content from webpages starting with a single URL and crawling to a specified number of links or depth of links. The response can be returned in either HTML, Markdown, or JSON.
+
+The `/crawl` endpoint respects the directives of `robots.txt` files, including `crawl-delay`. All URLs that `/crawl` is directed not to crawl are listed in the response with `"status": "disallowed"`.
+
+:::caution[Bot protection may block crawling]
+If you use Cloudflare products that control or restrict bot traffic such as [Bot Management](/bots/), [Web Application Firewall (WAF)](/waf/), or [Turnstile](/turnstile/), the same rules will apply to the Browser Rendering crawler. Refer to [Will Browser Rendering bypass Cloudflare's Bot Protection?](/browser-rendering/faq/#will-browser-rendering-bypass-cloudflares-bot-protection) for instructions on creating a WAF skip rule.
+:::
+
+## Endpoint
+
+```txt
+https://api.cloudflare.com/client/v4/accounts/<account_id>/browser-rendering/crawl
+```
+
+## Required fields
+- `url` (string)
+
+Refer to [optional parameters](/browser-rendering/rest-api/crawl-endpoint/#optional-parameters) for additional customization options.
+
+## Common use cases
+
+- Scraping online content to build a knowledge base of up-to-date information
+- Converting online content into LLM-friendly formats to train [Retrieval-Augmented Generation (RAG) applications](/reference-architecture/diagrams/ai/ai-rag/) and other AI systems
+
+## How the crawler discovers URLs
+
+The crawler discovers and processes URLs in the following order (when using `source: all`, the default):
+
+1. **Starting URL** — The URL specified in your request.
+2. **Sitemap links** — URLs found in the site's sitemap.
+3. **Page links** — Links scraped from pages, if not already found in the sitemap.
+
+Use the `source` parameter to customize which sources the crawler uses. The available options are:
+
+- `all` — Uses both sitemaps and page links (default).
+- `sitemaps` — Only crawls URLs found in the site's sitemap.
+- `links` — Only crawls links found on pages, ignoring sitemaps.
+
+## Basic usage
+
+There are two separate steps to using the `/crawl` endpoint:
+1. [Initiate the crawl job](/browser-rendering/rest-api/crawl-endpoint/#initiate-the-crawl-job) — A `POST` request where you initiate the crawl and receive a response with a job `id`.
+2. [Request results of the crawl job](/browser-rendering/rest-api/crawl-endpoint/#request-results-of-the-crawl-job) — A `GET` request where you request the status or results of the crawl.
+
+Crawl jobs have a maximum run time of seven days. If a job does not finish within this time, it will be cancelled due to timeout. Job results are available for 14 days after the job completes, after which the job data is deleted.
+
+:::note[Free plan limitation]
+Users on the Workers Free plan are limited to [10 minutes of browser time per day](/browser-rendering/pricing/). If a crawl exceeds this daily allocation, it will fail. To manage this limit, you can [put limitations on timeouts](/browser-rendering/reference/timeouts/) or [upgrade to a Workers Paid plan](/workers/platform/pricing/).
+
+Additionally, Free plan users are [limited to six requests per minute](/browser-rendering/limits/#workers-free). To increase your crawl throughput and finish jobs faster, [upgrade to a Workers Paid plan](/workers/platform/pricing/).
+:::
+
+### Initiate the crawl job
+
+The only required parameter is `url`. Refer to [optional parameters](/browser-rendering/rest-api/crawl-endpoint/#optional-parameters) for additional customization options. The API will respond immediately with a job `id` that you will use to retrieve the status and results of the crawl job.
+
+```bash
+curl -X POST 'https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/crawl' \
+  -H 'Authorization: Bearer <apiToken>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://developers.cloudflare.com/workers/"
+  }'
+```
+
+Example response:
+
+```json output
+{
+  "success": true,
+  "result": "97da8bb7-4d46-4d9e-b979-e7e1afa2cb29"
+}
+```
+
+### Request results of the crawl job
+
+To check the status or request the results of your crawl job, use the job `id` you received:
+
+```bash
+curl -X GET 'https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/crawl/c7f8s2d9-a8e7-4b6e-8e4d-3d4a1b2c3f4e' \
+  -H 'Authorization: Bearer YOUR_API_TOKEN'
+```
+
+The response includes a `status` field indicating the current state of the crawl job. The possible job statuses are:
+
+- `running` — The crawl job is currently in progress.
+- `cancelled_due_to_timeout` — The crawl job exceeded the maximum run time of seven days.
+- `cancelled_due_to_limits` — The crawl job was cancelled because it hit [account limits](/browser-rendering/limits/).
+- `cancelled_by_user` — The crawl job was manually cancelled by the user.
+- `errored` — The crawl job encountered an error.
+- `completed` — The crawl job finished successfully.
+
+You can also use optional query parameters to filter and paginate results:
+- `cursor` — Cursor for pagination.
+- `limit` — Maximum number of records to return.
+- `status` — Filter by URL status (`queued`, `completed`, `disallowed`, `skipped`, `errored`, or `cancelled`). The `skipped` status appears when URLs are filtered due to `includeExternalLinks: false`, `includeSubdomains: false`, or `includePatterns`/`excludePatterns`.
+
+Example with optional query parameters:
+
+```bash
+curl -X GET 'https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/crawl/c7f8s2d9-a8e7-4b6e-8e4d-3d4a1b2c3f4e?cursor=10&limit=10&status=completed' \
+  -H 'Authorization: Bearer YOUR_API_TOKEN'
+```
+
+Example response:
+
+```json output
+{
+  "result": {
+    "id": "c7f8s2d9-a8e7-4b6e-8e4d-3d4a1b2c3f4e",
+    "status": "completed",
+    "browserSecondsUsed": 134.7,
+    "total": 50,
+    "finished": 50,
+    "records": [
+      {
+        "url": "https://developers.cloudflare.com/workers/",
+        "status": "completed",
+        "markdown": "# Cloudflare Workers\nBuild and deploy serverless applications...",
+        "metadata": {
+          "status": 200,
+          "title": "Cloudflare Workers · Cloudflare Workers docs",
+          "url": "https://developers.cloudflare.com/workers/"
+        }
+      },
+      {
+        "url": "https://developers.cloudflare.com/workers/get-started/quickstarts/",
+        "status": "completed",
+        "markdown": "## Quickstarts\nGet up and running with a simple Hello World...",
+        "metadata": {
+          "status": 200,
+          "title": "Quickstarts · Cloudflare Workers docs",
+          "url": "https://developers.cloudflare.com/workers/get-started/quickstarts/"
+        }
+      }
+      // ... 48 more entries omitted for brevity
+    ],
+    "cursor": 10
+  },
+  "success": true
+}
+```
+
+:::note[Pagination]
+If the response contains more records than can be returned in a single request (maximum 10 MB), a `cursor` property will be included. Use this cursor value in your next request to retrieve additional records by including it as the `cursor` query parameter. For example:
+
+`https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/crawl/c7f8s2d9-a8e7-4b6e-8e4d-3d4a1b2c3f4e?cursor=10`
+:::
+
+### Cancel a crawl job
+
+To cancel a crawl job that is currently in progress, use the job `id` you received:
+
+```bash
+curl -X DELETE 'https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/crawl/c7f8s2d9-a8e7-4b6e-8e4d-3d4a1b2c3f4e' \
+  -H 'Authorization: Bearer YOUR_API_TOKEN'
+```
+
+A successful cancellation will return a `200 OK` status code. The job status will be updated to cancelled, and all URLs that have been queued to be crawled will be cancelled.
+
+## Advanced usage
+
+### Optional parameters
+
+The following optional parameters can be used in your crawl request, in addition to the required `url` parameter. For the full list, refer to the [API docs](https://developers.cloudflare.com/api/resources/browser_rendering/).
+
+| Optional parameter | Type | Description |
+| --- | --- | --- |
+| `limit` | Number | Maximum number of pages to crawl (default is 10, maximum is 100,000). |
+| `depth` | Number | Maximum link depth to crawl from the starting URL (default is 100,000, maximum is 100,000). |
+| `source` | String | Source for discovering URLs. Options are `all`, `sitemaps`, or `links`. Default is `all`. |
+| `formats` | Array of strings | Response format (default is HTML, other options are Markdown and JSON). |
+| `render` | Boolean | If false, does a fast HTML fetch without executing Javascript (default is true, [learn more about `render`](#render-parameter)). |
+| `jsonOptions` | Object | Only required if `formats` includes `json`. Contains `prompt`, `response_format`, and `custom_ai` properties (same types as the [`/json` endpoint](/browser-rendering/rest-api/json-endpoint/)). |
+| `maxAge` | Number | Maximum length of time the crawler can use a cached resource before it must re-fetch it from the origin server, in seconds (default is one day or 86,400 seconds, maximum is seven days or 604,800 seconds). Cache served from R2 storage only if URL and parameters exactly match the crawl request.|
+| `modifiedSince` | Number | Unix timestamp (in seconds) indicating to only crawl pages that were modified since this time. |
+| `options.includeExternalLinks` | Boolean | If true, follows links to external domains (default is false). |
+| `options.includeSubdomains` | Boolean | If true, follows links to subdomains of the starting URL (default is false). |
+| `options.includePatterns` | Array of strings | Only visits URLs that match one of these wildcard patterns. Use `*` to match any characters except `/`, or `**` to match any characters including `/`. |
+| `options.excludePatterns` | Array of strings | Does not visit URLs that match any of these wildcard patterns. Use `*` to match any characters except `/`, or `**` to match any characters including `/`. |
+
+:::note[Pattern behavior]
+**Priority:** `excludePatterns` has strictly higher priority. If a URL matches an exclude rule, it is skipped, regardless of whether it matches an include rule.
+
+**Default behavior:**
+- **No rules** — Behavior remains unchanged (everything is indexed).
+- **Exclude only** — Everything is indexed except items matching the exclude patterns.
+- **Include only** — Only items matching the include patterns are indexed; everything else is ignored.
+
+URLs that are discovered but skipped due to these rules will be visible in the dashboard logs in a future release. This will help you understand which items were intentionally omitted and debug cases where exclude and include rules accidentally overlap.
+:::
+
+Example `crawl` request with all optional parameters:
+
+```bash
+curl -X POST 'https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/crawl' \
+  -H 'Authorization: Bearer <apiToken>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://www.exampledocs.com/docs/",
+    "limit": 50,
+    "depth": 2,
+    "formats": ["markdown"],
+    "render": false,
+    "maxAge": 7200,
+    "modifiedSince": 1704067200,
+    "source": "all",
+    "options": {
+      "includeExternalLinks": true,
+      "includeSubdomains": true,
+      "includePatterns": [
+        "**/api/v1/*"
+      ],
+      "excludePatterns": [
+        "*/learning-paths/*"
+      ]
+    }
+}'
+```
+
+### `Render` parameter
+
+If you use `render: true`, which is the default, the `crawl` endpoint spins up a headless browser and executes page JavaScript. If you use `render: false`, the `crawl` endpoint does a fast HTML fetch without executing JavaScript.
+
+Use `render: true` when the page builds content in the browser. Use `render: false` when the content you need is already in the initial HTML response.
+
+Crawls that use `render: true` use a headless browser and are billed under typical Browser Rendering pricing. Crawls that use `render: false` are billed under [Workers pricing](/workers/platform/pricing/).
+
+<Render
+  file="setting-custom-user-agent"
+  product="browser-rendering"
+/>
+
+<Render
+  file="faq"
+  product="browser-rendering"
+/>
