@@ -144,6 +144,8 @@ Cloudflare Workers provides automatic tracing instrumentation **out of the box**
 
 #### [`RPC Handler`](/workers/runtime-apis/rpc/)
 
+All RPC requests within a [RPC session](/workers/runtime-apis/rpc/lifecycle/) using `RpcTarget` are nested under the initial session span.
+
 - `cloudflare.jsrpc.method`
 
 #### [`Email Handler`](/email-routing/email-workers/runtime-api/)
@@ -440,11 +442,38 @@ Cloudflare Workers provides automatic tracing instrumentation **out of the box**
 
 #### `durable_object_subrequest`
 
+- `cloudflare.durable_object.queue_time_ms`
+- `cloudflare.durable_object.startup_time_ms`
+- `cloudflare.durable_object.constructor_invoked`
+- `cloudflare.durable_object.constructor_time_ms`
+- `cloudflare.durable_object.cpu_time_ms`
+- `cloudflare.durable_object.wall_time_ms`
+// Added as attributes for now while we discusse span vs attribute
+- `cloudflare.durable_object.input_gate_lock_hold_ms` is the time holding the gate
+- `cloudflare.durable_object.input_gate_lock_wait_ms` is the time waiting for gate to be available
+- `cloudflare.durable_object.output_gate_lock_hold_ms`
+- `cloudflare.durable_object.output_gate_lock_wait_ms`
+
+#### For handlers[/workers/observability/traces/spans-and-attributes/#handlers] invoked on a Durable Object such as RPC or fetch(), these attributes exist:
+
+- `cloudflare.durable_object.objectId`
+- `cloudflare.durable_object.objectName`
+
+#### `durable_object_blockConcurrencyWhile`
+
 ---
 
-### [Durable Object Storage SQL API](/durable-objects/api/sqlite-storage-api)
+### [Durable Object SQLite Storage API](/durable-objects/api/sqlite-storage-api)
 
-The SQL API allow you to modify the SQLite database embedded within a Durable Object.
+The SQLite Storage API allows you to modify the SQLite database embedded within each Durable Object via SQL or key-value methods.
+
+#### Attributes available on all Durable Object Storage SQL API spans
+
+- `cloudflare.durable_object.response.rows_read`
+- `cloudflare.durable_object.response.rows_written`
+- `cloudflare.durable_object.response.bytes_read`
+- `cloudflare.durable_object.response.bytes_written`
+- `cloudflare.durable_object.response.sql_duration_ms`
 
 #### [`durable_object_storage_exec`](/durable-objects/api/sqlite-storage-api/#exec)
 
@@ -452,8 +481,6 @@ The SQL API allow you to modify the SQLite database embedded within a Durable Ob
 - `db.operation.name`
 - `db.query.text`
 - `cloudflare.durable_object.query.bindings`
-- `cloudflare.durable_object.response.rows_read`
-- `cloudflare.durable_object.response.rows_written`
 
 #### [`durable_object_storage_getDatabaseSize`](/durable-objects/api/sqlite-storage-api/#databasesize)
 
@@ -487,9 +514,9 @@ The SQL API allow you to modify the SQLite database embedded within a Durable Ob
 
 ---
 
-### [Durable Object Storage KV API](/durable-objects/api/legacy-kv-storage-api)
+### [Durable Object KV Storage API](/durable-objects/api/legacy-kv-storage-api)
 
-The legacy KV-backed API allows you to modify embedded storage within a Durable Object.
+The legacy KV-backed Storage API allows you to modify embedded storage within a Durable Object.
 
 #### [`durable_object_storage_get`](/durable-objects/api/legacy-kv-storage-api/#do-kv-async-get)
 
