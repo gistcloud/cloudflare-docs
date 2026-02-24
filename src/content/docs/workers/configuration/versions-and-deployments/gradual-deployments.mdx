@@ -3,115 +3,29 @@ pcx_content_type: configuration
 title: Gradual deployments
 head: []
 description: Incrementally deploy code changes to your Workers with gradual deployments.
+sidebar:
+  order: 1
 ---
 
-import { Example, DashButton, TypeScriptExample } from "~/components";
+import { Example, DashButton } from "~/components";
 
-Gradual Deployments give you the ability to incrementally deploy new [versions](/workers/configuration/versions-and-deployments/#versions) of Workers by splitting traffic across versions.
+Gradual deployments give you the ability to incrementally deploy new [versions](/workers/configuration/versions-and-deployments/#versions) of Workers by splitting traffic across versions.
 
 ![Gradual Deployments](~/assets/images/workers/platform/versions-and-deployments/gradual-deployments.png)
 
 Using gradual deployments, you can:
 
 - Gradually shift traffic to a newer version of your Worker.
-- Monitor error rates and exceptions across versions using [analytics and logs](/workers/configuration/versions-and-deployments/gradual-deployments/#observability) tooling.
+- Monitor error rates and exceptions across versions using [analytics and logs](#observability) tooling.
 - [Roll back](/workers/configuration/versions-and-deployments/rollbacks/) to a previously stable version if you notice issues when deploying a new version.
+- Route requests to different version configurations based on named user segments using [cohort-based deployments](/workers/configuration/versions-and-deployments/cohort-based-deployments/).
+- Send requests to a specific version of your Worker using [version overrides](/workers/configuration/versions-and-deployments/version-overrides/).
 
-## Use gradual deployments
+## How it works
 
-The following section guides you through an example usage of gradual deployments. You will choose to use either [Wrangler](/workers/configuration/versions-and-deployments/gradual-deployments/#via-wrangler) or the Cloudflare dashboard to:
+When you create a gradual deployment, you assign a percentage of traffic to each of two versions of your Worker. Each incoming request is routed to one of the two versions based on the configured percentages. For example, you can send 10% of traffic to a new version and 90% to the current stable version, then increase the new version's share as you gain confidence.
 
-- Create a new Worker.
-- Publish a new version of that Worker without deploying it.
-- Create a gradual deployment between the two versions.
-- Progress the deployment of the new version to 100% of traffic.
-
-### Via Wrangler
-
-:::note
-
-Minimum required Wrangler version: 3.40.0. Versions before 3.73.0 require you to specify a `--x-versions` flag.
-
-:::
-
-#### 1. Create and deploy a new Worker
-
-Create a new `"Hello World"` Worker using the [`create-cloudflare` CLI (C3)](/pages/get-started/c3/) and deploy it.
-
-```sh
-npm create cloudflare@latest <NAME> -- --type=hello-world
-```
-
-Answer `yes` or `no` to using TypeScript. Answer `yes` to deploying your application. This is the first version of your Worker.
-
-#### 2. Create a new version of the Worker
-
-To create a new version of the Worker, edit the Worker code by changing the `Response` content to your desired text and upload the Worker by using the [`wrangler versions upload`](/workers/wrangler/commands/#versions-upload) command.
-
-```sh
-npx wrangler versions upload
-```
-
-This will create a new version of the Worker that is not automatically deployed.
-
-#### 3. Create a new deployment
-
-Use the [`wrangler versions deploy`](/workers/wrangler/commands/#versions-deploy) command to
-create a new deployment that splits traffic between two versions of the Worker. Follow the interactive prompts to create a deployment with the versions uploaded in [step #1](/workers/configuration/versions-and-deployments/gradual-deployments/#1-create-and-deploy-a-new-worker) and [step #2](/workers/configuration/versions-and-deployments/gradual-deployments/#2-create-a-new-version-of-the-worker). Select your desired percentages for each version.
-
-```sh
-npx wrangler versions deploy
-```
-
-#### 4. Test the split deployment
-
-Run a cURL command on your Worker to test the split deployment.
-
-```bash
-for j in {0..10}
-do
-    curl -s https://$WORKER_NAME.$SUBDOMAIN.workers.dev
-done
-```
-
-You should see 10 responses. Responses will reflect the content returned by the versions in your deployment. Responses will vary depending on the percentages configured in [step #3](/workers/configuration/versions-and-deployments/gradual-deployments/#3-create-a-new-deployment).
-
-You can test also target a specific version using [version overrides](#version-overrides).
-
-#### 5. Set your new version to 100% deployment
-
-Run `wrangler versions deploy` again and follow the interactive prompts. Select the version uploaded in [step 2](/workers/configuration/versions-and-deployments/gradual-deployments/#2-create-a-new-version-of-the-worker) and set it to 100% deployment.
-
-```sh
-npx wrangler versions deploy
-```
-
-### Via the Cloudflare dashboard
-
-1. In the Cloudflare dashboard, go to the **Workers & Pages** page.
-
-   <DashButton url="/?to=/:account/workers-and-pages" />
-
-2. Select **Create application** > **Hello World** template > deploy your Worker.
-3. Once the Worker is deployed, go to the online code editor through **Edit code**. Edit the Worker code (change the `Response` content) and upload the Worker.
-4. To save changes, select the **down arrow** next to **Deploy** > **Save**. This will create a new version of your Worker.
-5. Create a new deployment that splits traffic between the two versions created in step 3 and 5 by going to **Deployments** and selecting **Deploy Version**.
-6. cURL your Worker to test the split deployment.
-
-```bash
-for j in {0..10}
-do
-    curl -s https://$WORKER_NAME.$SUBDOMAIN.workers.dev
-done
-```
-
-You should see 10 responses. Responses will reflect the content returned by the versions in your deployment. Responses will vary depending on the percentages configured in step #6.
-
-## Gradual deployments with static assets
-
-When your Worker serves [static assets](/workers/static-assets/), gradual deployments can cause asset compatibility issues where users receive HTML from one version that references assets only available in another version, leading to 404 errors.
-
-For detailed guidance on handling static assets during gradual rollouts, including specific examples and configuration steps, refer to [Gradual rollouts](/workers/static-assets/routing/advanced/gradual-rollouts/).
+By default, each request is independently assigned to a version based on the configured percentages. If you need requests from the same user or session to consistently reach the same version, you can configure [version affinity](#version-affinity).
 
 ## Version affinity
 
@@ -151,427 +65,11 @@ Selected operation under **Modify request header**: _Set dynamic_
 
 </Example>
 
-## Cohort-based deployments
+## Gradual deployments with static assets
 
-Cohort-based deployments extend gradual deployments by allowing you to route requests to different version configurations based on named user segments. Instead of applying the same percentage split to all traffic, you can define independent version percentages for each cohort.
+When your Worker serves [static assets](/workers/static-assets/), gradual deployments can cause asset compatibility issues where users receive HTML from one version that references assets only available in another version, leading to 404 errors.
 
-Use cohort-based deployments to:
-
-- Test changes with internal users or beta testers before external customers.
-- Roll out to free-tier customers before enterprise customers to limit blast radius.
-- Hold back specific user segments during incident response.
-
-### How cohort-based deployments work
-
-A cohort-based deployment includes:
-
-- A default `versions` array that applies to requests without a matching cohort.
-- A `cohorts` array where each cohort has its own name and version configuration.
-
-When a request arrives, the system checks the `Cloudflare-Workers-Cohort` header. If the header value matches a defined cohort name, that cohort's version configuration is used. Otherwise, the default `versions` array applies.
-
-### Deployment configuration
-
-Create a cohort-based deployment using the API. The following example shows a deployment where the default configuration sends 100% of traffic to one version, while the `canary` cohort splits traffic 50/50 between two versions:
-
-```json
-{
-	"strategy": "percentage",
-	"versions": [
-		{
-			"version_id": "abc123-stable-version",
-			"percentage": 100
-		}
-	],
-	"cohorts": [
-		{
-			"name": "canary",
-			"versions": [
-				{
-					"version_id": "abc123-stable-version",
-					"percentage": 50
-				},
-				{
-					"version_id": "def456-new-version",
-					"percentage": 50
-				}
-			]
-		},
-		{
-			"name": "enterprise",
-			"versions": [
-				{
-					"version_id": "abc123-stable-version",
-					"percentage": 100
-				}
-			]
-		}
-	]
-}
-```
-
-#### Cohort naming rules
-
-Cohort names must follow these rules:
-
-- Alphanumeric characters, hyphens (`-`), and underscores (`_`) only.
-- Maximum 20 characters.
-- Case-insensitive matching (for example, `CANARY` and `canary` route to the same cohort).
-- Each cohort name must be unique within a deployment.
-
-Invalid cohort names or duplicate names cause the deployment to fail with a `400` error.
-
-### Set the cohort header
-
-To route a request to a specific cohort, set the `Cloudflare-Workers-Cohort` header on the incoming request.
-
-```sh
-curl -s https://example.com -H 'Cloudflare-Workers-Cohort: canary'
-```
-
-#### Using Transform Rules
-
-You can use [Transform Rules](/rules/transform/request-header-modification/) to set the cohort header based on request properties such as cookies, URL patterns, or other headers. This allows you to implement cohort routing without modifying your application code.
-
-For example, to set the cohort based on a cookie value:
-
-<Example>
-
-Text in **Expression Editor**:
-
-```txt
-http.cookie contains "cohort="
-```
-
-Selected operation under **Modify request header**: _Set dynamic_
-
-**Header name**: `Cloudflare-Workers-Cohort`
-
-**Value**: `regex_replace(http.cookie, ".*cohort=([^;]+).*", "${1}")`
-
-</Example>
-
-#### Authenticated cohort assignment
-
-If cohort membership must be enforced (for example, only actual beta testers can access canary code), set the header server-side after authenticating the user. This prevents clients from spoofing their cohort.
-
-The following pattern uses an upstream Worker to:
-
-1. Authenticate the user.
-2. Determine their cohort based on trusted user data.
-3. Set the cohort header before forwarding to the target Worker.
-
-<TypeScriptExample>
-
-```ts
-export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
-		// 1. Authenticate the user (your auth logic here)
-		const user = await authenticateUser(request);
-
-		// 2. Determine cohort from trusted user data
-		const cohort = user.isBetaTester ? "canary" : "enterprise";
-
-		// 3. Set header and forward to downstream Worker
-		const modifiedRequest = new Request(request, {
-			headers: new Headers(request.headers),
-		});
-		modifiedRequest.headers.set("Cloudflare-Workers-Cohort", cohort);
-
-		return env.DOWNSTREAM_SERVICE.fetch(modifiedRequest);
-	},
-};
-```
-
-</TypeScriptExample>
-
-With this pattern, even if a client sends `Cloudflare-Workers-Cohort: canary`, your upstream Worker overwrites it with the correct value based on their actual user attributes.
-
-### Routing precedence
-
-When multiple routing signals are present, they are evaluated in this order:
-
-1. **Version Override** (`Cloudflare-Workers-Version-Overrides` header)
-2. **Cohort Header** (`Cloudflare-Workers-Cohort` header)
-3. **Version Key** (`Cloudflare-Workers-Version-Key` header)
-4. **Random percentage** (based on configured percentages)
-
-### Accessing the current cohort
-
-You can access the cohort that was used to route the current request via `ctx.options.cohort`:
-
-<TypeScriptExample>
-
-```ts
-export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		const cohort = ctx.options?.cohort; // "canary", "enterprise", or undefined
-
-		// Log or use the cohort value
-		console.log(`Request routed via cohort: ${cohort ?? "default"}`);
-
-		// You can include it in responses for debugging
-		return new Response(`Hello from ${cohort ?? "default"} cohort`);
-	},
-};
-```
-
-</TypeScriptExample>
-
-If the request did not match any cohort and used the default `versions` array, `ctx.options.cohort` will be `undefined`.
-
-### Cohort propagation in service bindings
-
-Cohorts do not automatically propagate across [service bindings](/workers/runtime-apis/bindings/service-bindings/). When Worker A calls Worker B via a service binding, Worker B receives no cohort information unless explicitly passed.
-
-To propagate a cohort to a downstream Worker, use the `.with()` method:
-
-<TypeScriptExample>
-
-```ts
-// Worker A - sending cohort to Worker B
-export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		const cohort =
-			request.headers.get("Cloudflare-Workers-Cohort") || "default";
-
-		// Pass cohort to downstream Worker
-		return env.WORKER_B.with({ cohort }).fetch(request);
-	},
-};
-```
-
-</TypeScriptExample>
-
-The receiving Worker can access the cohort via `ctx.options.cohort`:
-
-<TypeScriptExample>
-
-```ts
-// Worker B - receiving cohort from Worker A
-export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		// Access the cohort passed via .with()
-		const cohort = ctx.options?.cohort;
-
-		console.log(`Received cohort: ${cohort}`); // "canary"
-
-		// Worker B's version was selected based on this cohort
-		return new Response(`Running in cohort: ${cohort}`);
-	},
-};
-```
-
-</TypeScriptExample>
-
-The `.with()` method affects which version of Worker B is invoked and makes the cohort value available in `ctx.options.cohort`. The override does not persist through further hops — if Worker B calls Worker C, it must also use `.with()` to propagate the cohort.
-
-#### Multi-hop propagation
-
-The `.with()` method only affects the immediate downstream call. Each Worker in the chain must explicitly propagate the cohort:
-
-<TypeScriptExample>
-
-```ts
-// Worker A (entry point)
-export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
-		const cohort = request.headers.get("Cloudflare-Workers-Cohort");
-
-		// Explicitly pass cohort to Worker B
-		return env.WORKER_B.with({ cohort }).fetch(request);
-	},
-};
-```
-
-</TypeScriptExample>
-
-<TypeScriptExample>
-
-```ts
-// Worker B (middle of chain)
-export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		const cohort = ctx.options?.cohort; // "canary" from Worker A
-
-		// Must explicitly pass to Worker C — cohort does not auto-propagate
-		return env.WORKER_C.with({ cohort }).fetch(request);
-	},
-};
-```
-
-</TypeScriptExample>
-
-<TypeScriptExample>
-
-```ts
-// Worker C (end of chain)
-export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		const cohort = ctx.options?.cohort; // "canary" from Worker B
-		return new Response(`Final cohort: ${cohort}`);
-	},
-};
-```
-
-</TypeScriptExample>
-
-If Worker B does not call `.with()`, Worker C receives no cohort and uses its default version configuration:
-
-<TypeScriptExample>
-
-```ts
-// Worker B - does NOT propagate cohort
-export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		const cohort = ctx.options?.cohort; // "canary"
-
-		// Worker C will NOT receive the cohort
-		return env.WORKER_C.fetch(request); // No .with()!
-	},
-};
-```
-
-</TypeScriptExample>
-
-<TypeScriptExample>
-
-```ts
-// Worker C receives no cohort
-export default {
-	async fetch(
-		request: Request,
-		env: Env,
-		ctx: ExecutionContext,
-	): Promise<Response> {
-		const cohort = ctx.options?.cohort; // undefined
-		// Uses default version configuration
-		return new Response("Running default version");
-	},
-};
-```
-
-</TypeScriptExample>
-
-### Cohort-based deployments for Durable Objects
-
-When using cohort-based deployments with [Durable Objects](/durable-objects/), the cohort of the **first request** to a Durable Object instance determines which version that instance runs. Subsequent requests to the same Durable Object use that version, regardless of their cohort header.
-
-#### How version assignment works
-
-1. A request arrives with `Cloudflare-Workers-Cohort: canary`.
-2. The request creates or accesses Durable Object instance `room-123`.
-3. The Durable Object instance is assigned a version based on the `canary` cohort's configuration.
-4. All future requests to `room-123` use that version, even if they have a different cohort header.
-
-This ensures Durable Object state consistency — multiple versions of code do not operate on the same persistent state simultaneously.
-
-#### Example
-
-Given this deployment configuration:
-
-```json
-{
-	"versions": [{ "version_id": "v1-stable", "percentage": 100 }],
-	"cohorts": [
-		{
-			"name": "canary",
-			"versions": [{ "version_id": "v2-new", "percentage": 100 }]
-		}
-	]
-}
-```
-
-The following table shows how version assignment works:
-
-| Request | Cohort   | DO Instance | Version Used | Reason                                              |
-| :------ | :------- | :---------- | :----------- | :-------------------------------------------------- |
-| 1st     | `canary` | `room-123`  | `v2-new`     | First request, canary cohort config applies         |
-| 2nd     | `stable` | `room-123`  | `v2-new`     | Same DO instance, version locked from first request |
-| 3rd     | `canary` | `room-456`  | `v2-new`     | New DO instance, canary cohort config applies       |
-| 4th     | (none)   | `room-789`  | `v1-stable`  | New DO instance, default config applies             |
-
-The cohort header on subsequent requests does not change which version a Durable Object runs. Version assignment is locked on first access.
-
-### Error handling
-
-At runtime, invalid or unknown cohort header values fall back to the default `versions` configuration. At deploy time, invalid cohort names or duplicates will cause the deployment to fail with a `400` error.
-
-## Version overrides
-
-You can use version overrides to send a request to a specific version of your Worker in your gradual deployment.
-
-To specify a version override in your request, you can set the `Cloudflare-Workers-Version-Overrides` header on the request to your Worker. For example:
-
-```sh
-curl -s https://example.com -H 'Cloudflare-Workers-Version-Overrides: my-worker-name="dc8dcd28-271b-4367-9840-6c244f84cb40"'
-```
-
-`Cloudflare-Workers-Version-Overrides` is a [Dictionary Structured Header](https://www.rfc-editor.org/rfc/rfc8941#name-dictionaries).
-
-The dictionary can contain multiple key-value pairs. Each key indicates the name of the Worker the override should be applied to. The value indicates the version ID that should be used and must be a [String](https://www.rfc-editor.org/rfc/rfc8941#name-strings).
-
-A version override will only be applied if the specified version is in the current deployment. The versions in the current deployment can be found using the [`wrangler deployments list`](/workers/wrangler/commands/#deployments-list) command or on the **Workers & Pages** page of the Cloudflare dashboard > Select your Workers > Deployments > Active Deployment.
-
-:::note[Verifying that the version override was applied]
-
-There are a number of reasons why a request's version override may not be applied. For example:
-
-- The deployment containing the specified version may not have propagated yet.
-- The header value may not be a valid [Dictionary](https://www.rfc-editor.org/rfc/rfc8941#name-dictionaries).
-
-In the case that a request's version override is not applied, the request will be routed according to the percentages set in the gradual deployment configuration.
-
-To make sure that the request's version override was applied correctly, you can [observe](#observability) the version of your Worker that was invoked. You could even automate this check by using the [runtime binding](#runtime-binding) to return the version in the Worker's response.
-
-:::
-
-### Example
-
-You may want to test a new version in production before gradually deploying it to an increasing proportion of external traffic.
-
-In this example, your deployment is initially configured to route all traffic to a single version:
-
-|              Version ID              | Percentage |
-| :----------------------------------: | :--------: |
-| db7cd8d3-4425-4fe7-8c81-01bf963b6067 |    100%    |
-
-Create a new deployment using [`wrangler versions deploy`](/workers/wrangler/commands/#versions-deploy) and specify 0% for the new version whilst keeping the previous version at 100%.
-
-|              Version ID              | Percentage |
-| :----------------------------------: | :--------: |
-| dc8dcd28-271b-4367-9840-6c244f84cb40 |     0%     |
-| db7cd8d3-4425-4fe7-8c81-01bf963b6067 |    100%    |
-
-Now test the new version with a version override before gradually progressing the new version to 100%:
-
-```sh
-curl -s https://example.com -H 'Cloudflare-Workers-Version-Overrides: my-worker-name="dc8dcd28-271b-4367-9840-6c244f84cb40"'
-```
+For detailed guidance on handling static assets during gradual rollouts, including specific examples and configuration steps, refer to [Gradual rollouts](/workers/static-assets/routing/advanced/gradual-rollouts/).
 
 ## Gradual deployments for Durable Objects
 
@@ -657,10 +155,105 @@ scriptVersion: {
 
 ### Runtime binding
 
-Use the [Version metadata binding](/workers/runtime-apis/bindings/version-metadata/) in to access version ID or version tag in your Worker.
+Use the [Version metadata binding](/workers/runtime-apis/bindings/version-metadata/) to access version ID or version tag in your Worker.
 
 ## Limits
 
 ### Deployments limit
 
 You can only create a new deployment with the last 100 uploaded versions of your Worker.
+
+## Get started
+
+The following section guides you through an example usage of gradual deployments. You will choose to use either [Wrangler](#via-wrangler) or the [Cloudflare dashboard](#via-the-cloudflare-dashboard) to:
+
+- Create a new Worker.
+- Publish a new version of that Worker without deploying it.
+- Create a gradual deployment between the two versions.
+- Progress the deployment of the new version to 100% of traffic.
+
+### Via Wrangler
+
+:::note
+
+Minimum required Wrangler version: 3.40.0. Versions before 3.73.0 require you to specify a `--x-versions` flag.
+
+:::
+
+#### 1. Create and deploy a new Worker
+
+Create a new `"Hello World"` Worker using the [`create-cloudflare` CLI (C3)](/pages/get-started/c3/) and deploy it.
+
+```sh
+npm create cloudflare@latest <NAME> -- --type=hello-world
+```
+
+Answer `yes` or `no` to using TypeScript. Answer `yes` to deploying your application. This is the first version of your Worker.
+
+#### 2. Create a new version of the Worker
+
+To create a new version of the Worker, edit the Worker code by changing the `Response` content to your desired text and upload the Worker by using the [`wrangler versions upload`](/workers/wrangler/commands/#versions-upload) command.
+
+```sh
+npx wrangler versions upload
+```
+
+This will create a new version of the Worker that is not automatically deployed.
+
+#### 3. Create a new deployment
+
+Use the [`wrangler versions deploy`](/workers/wrangler/commands/#versions-deploy) command to
+create a new deployment that splits traffic between two versions of the Worker. Follow the interactive prompts to create a deployment with the versions uploaded in [step #1](#1-create-and-deploy-a-new-worker) and [step #2](#2-create-a-new-version-of-the-worker). Select your desired percentages for each version.
+
+```sh
+npx wrangler versions deploy
+```
+
+#### 4. Test the split deployment
+
+Run a cURL command on your Worker to test the split deployment.
+
+```bash
+for j in {0..10}
+do
+    curl -s https://$WORKER_NAME.$SUBDOMAIN.workers.dev
+done
+```
+
+You should see 10 responses. Responses will reflect the content returned by the versions in your deployment. Responses will vary depending on the percentages configured in [step #3](#3-create-a-new-deployment).
+
+You can also target a specific version using [version overrides](/workers/configuration/versions-and-deployments/version-overrides/).
+
+#### 5. Set your new version to 100% deployment
+
+Run `wrangler versions deploy` again and follow the interactive prompts. Select the version uploaded in [step 2](#2-create-a-new-version-of-the-worker) and set it to 100% deployment.
+
+```sh
+npx wrangler versions deploy
+```
+
+### Via the Cloudflare dashboard
+
+1. In the Cloudflare dashboard, go to the **Workers & Pages** page.
+
+   <DashButton url="/?to=/:account/workers-and-pages" />
+
+2. Select **Create application** > **Hello World** template > deploy your Worker.
+3. Once the Worker is deployed, go to the online code editor through **Edit code**. Edit the Worker code (change the `Response` content) and upload the Worker.
+4. To save changes, select the **down arrow** next to **Deploy** > **Save**. This will create a new version of your Worker.
+5. Create a new deployment that splits traffic between the two versions created in step 3 and 5 by going to **Deployments** and selecting **Deploy Version**.
+6. cURL your Worker to test the split deployment.
+
+```bash
+for j in {0..10}
+do
+    curl -s https://$WORKER_NAME.$SUBDOMAIN.workers.dev
+done
+```
+
+You should see 10 responses. Responses will reflect the content returned by the versions in your deployment. Responses will vary depending on the percentages configured in step #6.
+
+## Related resources
+
+- [Cohort-based deployments](/workers/configuration/versions-and-deployments/cohort-based-deployments/) — Route requests to different version configurations based on named user segments instead of a single percentage split.
+- [Version overrides](/workers/configuration/versions-and-deployments/version-overrides/) — Send a specific request to a specific version of your Worker, bypassing the percentage-based routing.
