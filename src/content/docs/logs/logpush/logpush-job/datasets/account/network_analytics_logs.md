@@ -57,6 +57,18 @@ Type: `string`
 
 The unique site identifier of the Cloudflare data center that received the packet (for example, 'ams01', 'sjc01', 'lhr01').
 
+## DNSQueryName
+
+Type: `string`
+
+The DNS query name (domain) that was queried, if the packet is a DNS query.
+
+## DNSQueryType
+
+Type: `string`
+
+The DNS query type (e.g., A, AAAA, MX, TXT), if the packet is a DNS query.
+
 ## Datetime
 
 Type: `int or string`

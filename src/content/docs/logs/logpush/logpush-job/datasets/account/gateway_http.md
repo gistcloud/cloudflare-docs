@@ -33,6 +33,12 @@ Type: `array[string]`
 
 Names of the applications that matched the HTTP request parameters.
 
+## ApplicationStatuses
+
+Type: `array[string]`
+
+Statuses of the applications that matched the HTTP request parameters.
+
 ## BlockedFileHash
 
 Type: `string`

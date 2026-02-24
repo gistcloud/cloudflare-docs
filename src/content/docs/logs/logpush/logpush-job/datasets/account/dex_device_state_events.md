@@ -135,6 +135,12 @@ Type: `string`
 
 The WARP client's DoH subdomain.
 
+## ExperimentalExtra
+
+Type: `object`
+
+Additional unstructured data sent by the WARP client. This field may change at any time.
+
 ## FirewallEnabled
 
 Type: `bool`
