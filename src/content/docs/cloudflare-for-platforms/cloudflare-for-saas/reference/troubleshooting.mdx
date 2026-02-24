@@ -124,6 +124,18 @@ Consider the following solutions:
 - Use the [Edit Custom Hostname](/api/resources/custom_hostnames/methods/edit/) endpoint to set the `certificate_authority` parameter to `google`: this sets Google Trust Services as the CA for your custom hostnames. In your API call, make sure to also include `method` and `type` in the `ssl` object.
 - If you are using a custom certificate for your custom hostname, refer to the [custom certificates troubleshooting](/ssl/edge-certificates/custom-certificates/troubleshooting/#lets-encrypt-chain-update).
 
+## Missing required SSL fields when editing custom hostname
+
+The [Edit Custom Hostname](/api/resources/custom_hostnames/methods/edit/) PATCH endpoint requires specific `ssl` fields depending on whether the custom hostname uses a managed certificate or a [custom certificate](/cloudflare-for-platforms/cloudflare-for-saas/security/certificate-management/custom-certificates/). Omitting required fields returns an error.
+
+**Managed certificates** — `ssl.type` (`"dv"`) and `ssl.method` (`"http"` or `"txt"`) are always required. For example, changing `certificate_authority` without including `type` and `method` will fail.
+
+**Custom certificates** — `ssl.custom_certificate` is always required, plus one of `ssl.custom_key` or `ssl.custom_csr_id`.
+
+For the full list of required fields and examples, refer to [Edit custom hostname SSL](/cloudflare-for-platforms/cloudflare-for-saas/start/common-api-calls/#edit-custom-hostname-ssl).
+
+***
+
 ## Custom hostname fails to verify because the zone is held
 
 The [zone hold feature](/fundamentals/account/account-security/zone-holds/) is a toggle that will prevent their zone from being activated on other Cloudflare account. When enabled, Cloudflare is not able to issue an SSL/TLS certificate on behalf of that domain name for either a zone or custom hostname.
