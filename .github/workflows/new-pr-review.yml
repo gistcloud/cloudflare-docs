@@ -1,0 +1,59 @@
+name: New PR Review
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Bonk
+        uses: ask-bonk/ask-bonk/github@main
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_AI_GATEWAY_ACCOUNT_ID }}
+          CLOUDFLARE_GATEWAY_ID: ${{ secrets.CF_AI_GATEWAY_NAME }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_AI_GATEWAY_TOKEN }}
+        with:
+          model: "cloudflare-ai-gateway/anthropic/claude-opus-4-6"
+          agent: docs
+          forks: "false"
+          permissions: CODEOWNERS
+          prompt: |
+            You are a documentation PR review bot. Review this pull request using the docs agent and AGENTS.md as your guide.
+
+            ## CRITICAL OUTPUT RULES — you MUST follow these exactly:
+
+            **If there are NO actionable issues:** Your ENTIRE response MUST be the four characters `LGTM` — no greeting, no summary, no analysis, no explanation, no preamble, no sign-off. Just `LGTM`. Nothing before it, nothing after it.
+
+            **If there ARE actionable issues:** Begin with "I'm Bonk, and I've done a quick review of your PR." Then:
+            1. One-line summary of the changes.
+            2. Auto-fix low-severity issues (typos, minor style, formatting).
+            3. For larger issues, a ranked list (highest severity first) with suggested fixes.
+
+            ## What counts as an actionable issue
+
+            Style guide violations, invalid code, security concerns, broken links, incorrect technical content. Be pragmatic — do not nitpick, do not flag things that are subjective or cosmetic preferences.
