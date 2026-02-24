@@ -1,0 +1,293 @@
+---
+title: Use alarms
+pcx_content_type: how-to
+sidebar:
+  order: 5
+---
+
+import {
+	GlossaryTooltip,
+	TypeScriptExample,
+	WranglerConfig,
+} from "~/components";
+
+<GlossaryTooltip term="alarm">Alarms</GlossaryTooltip> let you schedule a
+Durable Object to wake up at a specific time and run its `alarm()` handler. Each
+Durable Object can have one alarm set at a time, but you can build complex
+scheduling on top of that single alarm.
+
+For method signatures and parameter details, refer to the [Alarms API reference](/durable-objects/api/alarms/).
+
+## Schedule an alarm
+
+Call `setAlarm()` with a timestamp to schedule the alarm, then implement an `alarm()` handler to run when it fires.
+
+<TypeScriptExample>
+
+```ts
+import { DurableObject } from "cloudflare:workers";
+
+interface Env {
+	ALARM_EXAMPLE: DurableObjectNamespace<AlarmExample>;
+}
+
+export class AlarmExample extends DurableObject<Env> {
+	async scheduleWork(): Promise<string> {
+		// Only set an alarm if one is not already scheduled.
+		const currentAlarm = await this.ctx.storage.getAlarm();
+		if (currentAlarm == null) {
+			await this.ctx.storage.setAlarm(Date.now() + 10_000);
+		}
+		return "Alarm set";
+	}
+
+	async alarm(): Promise<void> {
+		// Runs when the alarm fires.
+		// Perform work, call APIs, or set the next alarm here.
+	}
+}
+
+export default {
+	async fetch(request: Request, env: Env): Promise<Response> {
+		const stub = env.ALARM_EXAMPLE.getByName("foo");
+		const result = await stub.scheduleWork();
+		return new Response(result);
+	},
+};
+```
+
+</TypeScriptExample>
+
+:::caution[Do not call setAlarm unconditionally in the constructor]
+If the Durable Object wakes up after being inactive, the constructor runs before the pending `alarm()` handler. Calling `setAlarm()` in the constructor without checking `getAlarm()` first can overwrite the pending alarm.
+:::
+
+Configure your Wrangler file with a Durable Object [binding](/durable-objects/get-started/#4-configure-durable-object-bindings) and [migration](/durable-objects/how-to/configure-migrations/):
+
+<WranglerConfig>
+
+```jsonc
+{
+	"name": "alarm-example",
+	"main": "src/index.ts",
+	"compatibility_date": "$today",
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "ALARM_EXAMPLE",
+				"class_name": "AlarmExample",
+			},
+		],
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["AlarmExample"],
+		},
+	],
+}
+```
+
+</WranglerConfig>
+
+## Batch requests with alarms
+
+Alarms are useful for batching work. Instead of processing each incoming request individually, you can buffer requests in storage and process them together when the alarm fires.
+
+The pattern works as follows:
+
+1. On each request, write data to storage and set an alarm if one is not already pending.
+2. When the alarm fires, read all buffered data, send it to an upstream service, and clear storage.
+
+<TypeScriptExample>
+
+```ts
+import { DurableObject } from "cloudflare:workers";
+
+interface Env {
+	BATCHER: DurableObjectNamespace<Batcher>;
+}
+
+export class Batcher extends DurableObject<Env> {
+	count: number = 0;
+
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		this.ctx.blockConcurrencyWhile(async () => {
+			const vals = await this.ctx.storage.list({ reverse: true, limit: 1 });
+			this.count =
+				vals.size === 0 ? 0 : parseInt(vals.keys().next().value as string);
+		});
+	}
+
+	async queue(body: string): Promise<{ queued: number }> {
+		this.count++;
+
+		// If there is no alarm currently set, set one for 10 seconds from now.
+		// All requests in the next 10 seconds become part of this batch.
+		const currentAlarm = await this.ctx.storage.getAlarm();
+		if (currentAlarm == null) {
+			await this.ctx.storage.setAlarm(Date.now() + 10_000);
+		}
+
+		// Buffer the request body in storage.
+		await this.ctx.storage.put(this.count.toString(), body);
+		return { queued: this.count };
+	}
+
+	async alarm(): Promise<void> {
+		const vals = await this.ctx.storage.list();
+		await fetch("https://example.com/some-upstream-service", {
+			method: "POST",
+			body: JSON.stringify(Array.from(vals.values())),
+		});
+		await this.ctx.storage.deleteAll();
+		this.count = 0;
+	}
+}
+
+export default {
+	async fetch(request: Request, env: Env): Promise<Response> {
+		const stub = env.BATCHER.getByName("foo");
+		const result = await stub.queue(await request.text());
+		return Response.json(result);
+	},
+};
+```
+
+</TypeScriptExample>
+
+If an unexpected error terminates the Durable Object, the runtime re-instantiates it on another machine. After a short delay, the `alarm()` handler runs from the beginning.
+
+## Schedule multiple events
+
+Although each Durable Object supports only one alarm at a time, you can manage many scheduled and recurring events by storing event metadata and pointing the single alarm at the earliest due event.
+
+<TypeScriptExample>
+
+```ts
+import { DurableObject } from "cloudflare:workers";
+
+interface ScheduledEvent {
+	id: string;
+	runAt: number;
+	repeatMs: number | null;
+}
+
+export class Scheduler extends DurableObject {
+	async scheduleEvent(
+		id: string,
+		runAt: number,
+		repeatMs: number | null = null,
+	): Promise<void> {
+		await this.ctx.storage.put<ScheduledEvent>(`event:${id}`, {
+			id,
+			runAt,
+			repeatMs,
+		});
+
+		// Move the alarm earlier if this event fires sooner.
+		const currentAlarm = await this.ctx.storage.getAlarm();
+		if (!currentAlarm || runAt < currentAlarm) {
+			await this.ctx.storage.setAlarm(runAt);
+		}
+	}
+
+	async alarm(): Promise<void> {
+		const now = Date.now();
+		const events = await this.ctx.storage.list<ScheduledEvent>({
+			prefix: "event:",
+		});
+		let nextAlarm: number | null = null;
+
+		for (const [key, event] of events) {
+			if (event.runAt <= now) {
+				await this.processEvent(event);
+
+				if (event.repeatMs) {
+					// Reschedule recurring events.
+					event.runAt = now + event.repeatMs;
+					await this.ctx.storage.put(key, event);
+				} else {
+					await this.ctx.storage.delete(key);
+				}
+			}
+
+			// Track the soonest future event.
+			if (event.runAt > now && (!nextAlarm || event.runAt < nextAlarm)) {
+				nextAlarm = event.runAt;
+			}
+		}
+
+		if (nextAlarm) {
+			await this.ctx.storage.setAlarm(nextAlarm);
+		}
+	}
+
+	async processEvent(event: ScheduledEvent): Promise<void> {
+		// Your event handling logic here.
+	}
+}
+```
+
+</TypeScriptExample>
+
+This pattern supports both one-time and recurring events. The `alarm()` handler processes every event whose `runAt` time has passed, reschedules recurring events, and sets the next alarm for the earliest remaining event.
+
+## Handle retries
+
+Alarms have guaranteed at-least-once execution. If the `alarm()` handler throws an uncaught exception, the runtime retries it with exponential backoff starting at 2 seconds, for up to 6 retries.
+
+The `alarm()` handler receives an optional `alarmInfo` parameter with retry metadata:
+
+<TypeScriptExample>
+
+```ts
+import { DurableObject } from "cloudflare:workers";
+
+export class MyDurableObject extends DurableObject {
+	async alarm(alarmInfo?: AlarmInvocationInfo): Promise<void> {
+		if (alarmInfo?.isRetry) {
+			console.log(`Retry attempt ${alarmInfo.retryCount}`);
+		}
+
+		// Make alarm handlers idempotent: check whether the work
+		// has already been completed before doing it again.
+		const alreadyProcessed =
+			await this.ctx.storage.get<boolean>("batch:processed");
+		if (alreadyProcessed) {
+			return;
+		}
+
+		await this.doBatchWork();
+		await this.ctx.storage.put("batch:processed", true);
+	}
+
+	private async doBatchWork(): Promise<void> {
+		// Your batch processing logic here.
+	}
+}
+```
+
+</TypeScriptExample>
+
+Because retries are limited to 6 attempts, catch exceptions inside your `alarm()` handler and schedule a new alarm if you need indefinite retries. Otherwise, a prolonged downstream outage can exhaust all retry attempts and the alarm will stop firing.
+
+```ts
+async alarm(): Promise<void> {
+	try {
+		await this.doWork();
+	} catch (e) {
+		// Schedule a new alarm so work is retried even if
+		// the built-in retries are exhausted.
+		await this.ctx.storage.setAlarm(Date.now() + 30_000);
+		throw e;
+	}
+}
+```
+
+## Related resources
+
+- [Alarms API reference](/durable-objects/api/alarms/) — method signatures, parameters, and behavior details.
+- [Pricing](/durable-objects/platform/pricing/) — how alarm invocations are billed.
+- [Storage API](/durable-objects/api/sqlite-storage-api/) — the full storage API available within Durable Objects.

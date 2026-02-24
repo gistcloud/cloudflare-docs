@@ -56,7 +56,7 @@ sequenceDiagram
 | Worker calling agent (same codebase) | Durable Object RPC (no decorator needed)  |
 | Agent calling another agent          | Durable Object RPC via `getAgentByName()` |
 
-The `@callable()` decorator is specifically for WebSocket-based RPC from external clients. When calling from within the same Worker or another agent, use standard [Durable Object RPC](/durable-objects/best-practices/create-durable-object-stubs-and-send-requests/) directly.
+The `@callable()` decorator is specifically for WebSocket-based RPC from external clients. When calling from within the same Worker or another agent, use standard [Durable Object RPC](/durable-objects/how-to/invoke-methods/) directly.
 
 ## Basic usage
 
