@@ -51,7 +51,9 @@ async function autogenStyles() {
 		})
 	)
 		.filter((x) => x.isFile())
-		.map((x) => x.parentPath + x.name)
+		.map((x) =>
+			x.parentPath ? x.parentPath + "/" + x.name : "./src/styles/" + x.name,
+		)
 		.sort((a) => (a === "./src/styles/tailwind.css" ? -1 : 1));
 
 	return styles;
