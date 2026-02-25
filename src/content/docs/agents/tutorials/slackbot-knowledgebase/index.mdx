@@ -1,0 +1,494 @@
+---
+updated: 2025-05-20
+difficulty: Beginner
+content_type: Tutorial
+pcx_content_type: tutorial
+title: Building a Slackbot with Agents SDK
+products:
+  - Agents
+  - AutoRAG
+languages:
+  - JavaScript
+  - TypeScript
+---
+
+import {
+	Render,
+	Steps,
+	PackageManagers,
+	WranglerConfig,
+	Details,
+} from "~/components";
+
+In this tutorial, you will create an AI-powered Slackbot. The bot will answer user's questions, using the content embeded with [AutoRAG](/autorag). You will use the Agents SDK to create the agent.
+
+For each new thread, you will have a new instance of the agent. You will also store the messages of each thread in the state of the agent. This will allow you to maintain the conversation context. If a user asks a follow-up question, the agent will have access to the previous messages and can provide a more accurate response.
+
+Using the Agents SDK, you don't need to implement the state management logic. The SDK provide you with the necessary tools to manage the state seamlessly. You also don't need an external database to store the messages, as they are stored in the persistent storage of the agent.
+
+While this tutorial focuses on building a Slackbot, the same principles can be applied to any use-case that requires an AI-powered agent. You can even extend this tutorial to build agents for incident response, customer support, or any other use-case that requires an AI-powered agent.
+
+## Prerequisites
+
+Before you begin, you'll need the following:
+
+<Render file="prereqs" product="workers" />
+
+3. You will also need a Slack workspace where you have permission to create and manage apps.
+
+## Step 1: Create a Worker project
+
+Create a new Workers project by running the following command:
+
+<PackageManagers type="create" pkg="cloudflare@latest" args={"fast-commerce"} />
+
+<Render
+	file="c3-post-run-steps"
+	product="workers"
+	params={{
+		category: "hello-world",
+		type: "Worker only",
+		lang: "TypeScript",
+	}}
+/>
+
+You will need to install the [Cloudflare Agents SDK](https://developers.cloudflare.com/agents/), [AI SDK](https://www.npmjs.com/package/ai), OpenAI provider for AI SDK, [zod](https://www.npmjs.com/package/zod), the [Slack Web API package](https://www.npmjs.com/package/@slack/web-api).
+
+<PackageManagers pkg="agents ai @ai-sdk/openai zod @slack/web-api" />
+
+Your project is now set up. You can start building your agent!
+
+## Step 2: Handle Slack events
+
+Based on the Slack events you subscribe to, the Worker will receive events from Slack. You will need to handle these events and process them accordingly. Slack sends two types of events:
+
+- `url_verification`: To verify the request is from Slack.
+- `event_callback`: Event callback for the events you subscribe to.
+
+You will need to handle both of these events. The `url_verification` event can be handled by our Worker. This event is used to verify the request is from Slack and doesn't need AI capabilities to be processed by the agent.
+
+The `event_callback` event will be processed by the agent. This event contains the actual events you subscribed to. It will provide the event data that will be used by the agent to generate responses.
+
+To handle the `url_verification` event, you will need to:
+
+1. Check the event type is `url_verification`.
+2. Return the `challenge` value in the response.
+
+In your `index.ts` file, update the `fetch` handler with the below code:
+
+```ts title="src/index.ts" {1-5} {9-25}
+import {
+	type GenericMessageEvent,
+	WebClient,
+	type AppMentionEvent,
+} from "@slack/web-api";
+
+export default {
+	async fetch(request: Request) {
+		const body = (await request.json()) as {
+			type: string;
+			challenge?: string;
+			event: GenericMessageEvent | AppMentionEvent;
+		};
+
+		if (body.type === "url_verification") {
+			return new Response(body.challenge, { status: 200 });
+		}
+
+		if (request.method !== "POST") {
+			return new Response("Not found", { status: 404 });
+		}
+
+		if (body.type !== "event_callback") {
+			return new Response("Not found", { status: 404 });
+		}
+	},
+};
+```
+
+The code above handles the `url_verification` event. It also checks if the request method is `POST` and checks if the event type is not `event_callback`. If any of these conditions are not met, it returns a `404 Not Found` response.
+
+For the `event_callback` type, you will need to
+
+1. extract the timestamp of the event or the message thread.
+2. Create a new instance of the agent using the timestamp.
+3. Pass the event data to the agent.
+
+Add the below code to your `fetch` handler:
+
+```ts title="src/index.ts" {18-20}
+...
+export default {
+	async fetch(request, env, ctx): Promise<Response> {
+		const body = (await request.json()) as { type: string; challenge?: string; event: GenericMessageEvent | AppMentionEvent };
+
+		if (body.type === 'url_verification') {
+			return new Response(body.challenge, { status: 200 });
+		}
+
+		if (request.method !== 'POST') {
+			return new Response('Not found', { status: 404 });
+		}
+
+		if (body.type !== 'event_callback') {
+			return new Response('Not found', { status: 404 });
+		}
+
+		let threadId = body.event.thread_ts || body.event.ts;
+		let agent = await getAgentByName<Env, KnowledgeBaseAgent>(env.KnowledgeBaseAgent, threadId);
+		return await agent.chat(body.event);
+	},
+} satisfies ExportedHandler<Env>;
+```
+
+Note that you have not created the Agent yet. You will create it in the next step.
+
+## Step 3: Create the Agent
+
+To create an Agent, you need to extend the `Agent` class. The `Agent` class is a base class that provides the basic functionality for an Agent.
+
+For your agent, you will need to implement the following method:
+
+- `callAi`: This method will call the AI to generate an answer.
+- `postToSlack`: This method handles posting messages on Slack.
+- `chat`: This method will be called when the agent receives a message from the user.
+
+In this tutorial, you will use the AI SDK to generate responses from the AI. You will use the model `gpt-4o` from OpenAI provider.
+
+```ts title="src/index.ts"
+import { Agent, getAgentByName } from "agents";
+import { generateText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { env } from "cloudflare:workers";
+import {
+	type GenericMessageEvent,
+	WebClient,
+	type AppMentionEvent,
+} from "@slack/web-api";
+
+export class KnowledgeBaseAgent extends Agent<Env> {
+	async callAi(userText: string) {
+		if (!userText) {
+			console.log("No text in message, skipping");
+			return "I couldn't understand that message. Could you please rephrase?";
+		}
+
+		const openai = createOpenAI({ apiKey: env.OPENAI_API_KEY });
+		const { text, response } = await generateText({
+			model: openai("gpt-4o"),
+			system: `You are a Slackbot Support Assistant. You help users with their questions and issues. You have access to tools that retrieve information from the knowledge base.
+			Keep your responses concise and to the point.
+			`,
+			messages: [
+				{
+					role: "user",
+					content: userText,
+				},
+			],
+			tools: {
+				KnowledgeBaseTool,
+			},
+			maxSteps: 2,
+		});
+
+		const formattedResponse = text
+			? text.replace(/\[(.*?)\]\((.*?)\)/g, "<$2|$1>").replace(/\*\*/g, "*")
+			: "I'm sorry, I couldn't generate a response.";
+
+		return formattedResponse;
+	}
+
+	async chat(body: GenericMessageEvent | AppMentionEvent): Promise<Response> {
+		// Wait for the postToSlack function to complete
+		this.ctx.waitUntil(this.postToSlack(body));
+
+		// Return a 200 response
+		return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+	}
+
+	async postToSlack(body: GenericMessageEvent | AppMentionEvent) {
+		const client = new WebClient(env.SLACK_BOT_TOKEN);
+		// Skip messages from bots or from this bot itself
+		if (body.bot_profile || body.bot_id || body.subtype === "message_changed") {
+			console.log("Skipping bot message");
+			return;
+		}
+
+		// Only process direct messages or mentions to avoid loops
+		if (body.type === "app_mention" || body.type === "message") {
+			try {
+				const userMessage = body.text || "";
+				const response = await this.callAi(userMessage);
+
+				// Send response in thread if possible
+				await client.chat.postMessage({
+					channel: body.channel,
+					text: response,
+					// Add thread_ts if the message is in a thread to keep conversations organized
+					thread_ts: body.thread_ts || body.ts,
+					mrkdwn: true,
+				});
+
+				return { status: "responded" };
+			} catch (error) {
+				console.error("Error processing message:", error);
+				return {
+					status: "error",
+					message: error instanceof Error ? error.message : String(error),
+				};
+			}
+		}
+	}
+}
+```
+
+The above code does the following:
+
+1. `callAi`
+
+- Checks if the user message is empty
+- Calls the AI to generate a response passing the user message and the knowledge base tool
+- Formats the response
+- Returns the response
+
+2. `chat`
+
+- Calls the `postToSlack` method to post the answer in the thread
+- Returns a success response
+
+3. `postToSlack`
+
+- Creates a new client using the bot token
+- Checks if the message is from a bot or from this bot itself
+- Checks if the message is a direct message or a mention
+- Calls the `callAi` method to generate a response
+- Sends the response in the thread
+
+Agents are built on top of Durable Objects. This means that each agent is a durable object. You need to update your `wrangler` configuration file to include the durable object binding for the agent.
+
+<WranglerConfig>
+```toml
+[[durable_objects.bindings]]
+name = "KnowledgeBaseAgent"
+class_name = "KnowledgeBaseAgent"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["KnowledgeBaseAgent"]
+
+```
+</WranglerConfig>
+
+You will also need to add the OpenAI API key to the `.dev.vars` file. You can get the API key from [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys).
+
+```text title=".dev.vars"
+OPENAI_API_KEY=sk-1234567890
+```
+
+You now have a Slackbot that can answer user's questions. To make sure it uses the knowledge base, you will need to add the knowledge base tool to the AI model.
+
+## Step 4: Create the knowledge base tool
+
+To make sure your users get the best answers, you will need to add the knowledge base tool to the AI model. The KnowledgeBaseTool is a tool that uses AutoRAG to retrieve information. You will need to create and configure a new AutoRAG instance. You can follow the [AutoRAG getting started](/autorag/get-started/) to create and configure a new AutoRAG instance.
+
+Once you have created and configured the AutoRAG instance, you will need to create the knowledge base tool. The knowledge base tool will be used to retrieve information from the knowledge base. You will use AI bindings to use AutoRAG. In your `wrangler` configuration file, add the following binding:
+
+<WranglerConfig>
+```toml
+[ai]
+binding = "AI"
+```
+
+</WranglerConfig>
+
+Next, in your `index.ts` file, add the following code:
+
+```ts {2-17}
+...
+import {z} from "zod";
+import { tool, generateText } from "ai";
+
+const KnowledgeBaseTool = tool({
+	description: "Search the knowledge base for an answer to the user's question",
+	parameters: z.object({
+		question: z.string().describe('The question to search for in the knowledge base'),
+	}),
+	execute: async ({ question }) => {
+		const resp = await env.AI.autorag('autorag-demo').aiSearch({
+			query: question,
+			stream: false,
+		});
+		return resp;
+	},
+});
+...
+
+```
+
+The above code does the following:
+
+1. Creates a tool using the `tool` function from the AI SDK
+2. The tool has a description and parameters
+3. The tool has an execute function that takes a question as input, uses AutoRAG to retrieve information from the knowledge base, and returns the answer
+
+You can now use the knowledge base tool in your agent. You already passed this tool to the AI model in the `callAi` method.
+
+The next step is to create a Slack app, and configure the credentials.
+
+## Step 5: Create a Slack app
+
+To create a Slack app, follow these steps:
+
+1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) and click on `Create New App`. Select the "From scratch" option.
+2. Enter a name for your app and select the workspace where you want to create the app.
+3. Go to the `OAuth & Permissions` page and add the following Bot Token Scopes to your app:
+   - `app_mentions:read`
+   - `assistant:write`
+   - `chat:write`
+   - `im:read`
+   - `im:write`
+4. In the `Advanced token security via token rotation` section, install the app to your workspace and copy the `Bot User OAuth Token`.
+5. Go to the `Event Subscriptions` page and enable `Enable Events` and add the following bot event subscriptions:
+   - `app_mention`
+   - `assistant_thread_started`
+   - `message.channels`
+   - `message.im`
+
+:::note
+
+You will need to add a URL in the `Request URL` field in the `Event Subscriptions` page. This URL will be used to receive events from Slack. You will add this URL after deploying the Worker.
+
+:::
+
+6. In your project directory, create a `.dev.vars` file and add the Bot token you copied in the previous step.
+
+```text title=".dev.vars"
+SLACK_BOT_TOKEN=xoxb-1234567890-1234567890-1234567890
+```
+
+## Step 6: Deploy the Worker
+
+Your Slack app is now ready to receive events from Slack. You will need to deploy the agent to Cloudflare Workers. Slack will send events to the Worker, and the Worker will process the events and send responses to Slack.
+
+:::note
+
+Application running on `localhost` will not receive events from Slack. You will need to deploy the Worker to Cloudflare Workers. Alternatively, you can use a reverse proxy to forward events from Slack to your application running on `localhost` using [Cloudflare Tunnels](/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/).
+
+:::
+
+To deploy, execut the following command:
+
+```bash
+npm run deploy
+```
+
+The output returns the URL of the deployed Worker. Copy the URL and add it to the `Request URL` field in the `Event Subscriptions` page of your Slack app. Click on `Save Changes` to save the URL.
+
+Next, add the credentials for your deployed Worker. Run the following command to do so:
+
+```bash
+npx wrangler secret bulk .dev.vars
+```
+
+This command will add the credentials to your deployed Worker from your `.dev.vars` file.
+
+## Step 7: Test the agent
+
+Make sure that the app is installed in your workspace. Add the app to a channel or a direct message and mention the app. The app should respond with a message.
+
+The Slackbot will respond in the message thread. If you ask a follow-up question in the same thread, you will notice that the Slackbot doesn't provide the expected answer. This is because it doesn't have the context of the previous conversation. You will need to store the messages of each thread in the state of the agent.
+
+## Step 8: Store the messages in Agent's state
+
+For your user to be able to ask follow-up questions, your agent needs the context of the previous conversation. You will need to store the messages of each thread in the state of the agent.
+
+To store the messages in the state of the agent, you will need to modify the `index.ts` file.
+
+```ts {1,5, 7-12,21-29,38,49-55}
+import { tool, generateText, type Message, appendResponseMessages } from 'ai';
+...
+
+// Add Message[] as the second generic parameter to Agent
+export class KnowledgeBaseAgent extends Agent<Env, Message[]> {
+
+	async onStart(): Promise<void> {
+		// Initialize state as an empty array if it doesn't exist
+		if (!this.state) {
+			this.setState([]);
+		}
+	}
+
+	async callAi(userText: string) {
+		// Make sure we have text to process
+		if (!userText) {
+			console.log('No text in message, skipping');
+			return "I couldn't understand that message. Could you please rephrase?";
+		}
+
+		// Append user message to history
+		this.setState([
+			...(Array.isArray(this.state) ? this.state : []),
+			{
+				id: crypto.randomUUID(),
+				role: 'user',
+				content: userText,
+			},
+		]);
+
+		const openai = createOpenAI({ apiKey: env.OPENAI_API_KEY });
+		// Generate context-aware response
+		const { text, response } = await generateText({
+			model: openai('gpt-4o'),
+			system: `You are a Slackbot Support Assistant. You help users with their questions and issues. You have access to tools that retrieve information from the knowledge base.
+			Keep your responses concise and to the point.
+			`,
+			messages: Array.isArray(this.state) ? this.state : [],
+			tools: {
+				KnowledgeBaseTool,
+			},
+			maxSteps: 2,
+		});
+
+		const formattedResponse = text
+			? text.replace(/\[(.*?)\]\((.*?)\)/g, '<$2|$1>').replace(/\*\*/g, '*')
+			: "I'm sorry, I couldn't generate a response.";
+
+		// Add assistant response to history
+		this.setState(
+			appendResponseMessages({
+				messages: Array.isArray(this.state) ? this.state : [],
+				responseMessages: response.messages,
+			})
+		);
+
+		// Format the response for Slack
+		return formattedResponse;
+	}
+
+	...
+
+}
+```
+
+The above code does the following:
+
+1. Imports the `Message` type from the AI SDK
+2. Adds `Message[]` as the second generic parameter to `Agent`. This defines the type of the state of the agent.
+3. Initializes the state as an empty array if it doesn't exist
+4. Appends the user message to the state
+5. Calls the LLM by passing the state as the messages for context
+6. Appends the assistant response to the state.
+
+Save and deploy the Worker. The agent should now be able to maintain the conversation context.
+
+## Summary
+
+In this tutorial, you have created an AI-powered Slackbot. The bot can answer user's questions, using the content embeded with [AutoRAG](/autorag). You have used the Agents SDK to create the agent. The agent has a state that stores the messages of each thread. This allows the agent to maintain the conversation context.
+
+You can now use the agent to answer user's questions in your Slack app.
+
+You can extend this tutorial to build agents for incident response, customer support, or any other use-case that requires an AI agent. You can add more tools to the agent to retrieve information from different sources, or you can use different LLMs to generate responses.
+
+The Agents SDK provides a lot of features that you can use to build AI agents. You can find more information about the Agents SDK in the [Agents API Reference](/agents/api-reference/).
+
+If you are looking for the complete source code for this tutorial, you can find it in the [GitHub repository](https://github.com/harshil1712/slack-cf-autorag-agent).
