@@ -1,0 +1,6 @@
+name = "smart-docs-worker"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# No user-facing messages about detection
+# Content is quietly personalized for user's OS
