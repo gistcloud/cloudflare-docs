@@ -12,6 +12,12 @@ There is a new API for uploading Workers. Refer to [these docs](/workers/platfor
 
 If you're using the [Workers Script Upload API](/api/resources/workers/subresources/scripts/methods/update/) or [Version Upload API](/api/resources/workers/subresources/scripts/subresources/versions/methods/create/) directly, `multipart/form-data` uploads require you to specify a `metadata` part. This metadata defines the Worker's configuration in JSON format, analogue to the [wrangler.toml file](/workers/wrangler/configuration/).
 
+:::note
+
+Uploading the `wrangler.toml` or `wrangler.json` files as modules will cause upload errors. Use the `metadata` JSON format instead.
+:::
+
+
 ## Sample `metadata`
 
 ```json
