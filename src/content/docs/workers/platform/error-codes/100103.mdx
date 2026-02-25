@@ -1,0 +1,49 @@
+---
+pcx_content_type: reference
+title: "100103"
+head:
+  - tag: title
+    content: "Error 100103 - Tag Limit Reached"
+sidebar:
+  order: 100103
+  hidden: true
+---
+
+**Message:** Tag limit reached: Workers can have at most (max) tags. Remove existing tags before adding new ones.
+
+**Category:** [Limits](/workers/platform/error-codes/#limits)
+
+**HTTP Status:** 403 Forbidden
+
+**When this occurs:**
+
+Your Worker has reached the maximum number of tags allowed. Tags help organize and filter Workers but are limited per Worker.
+
+**How to fix:**
+
+1. **Review existing tags** - Check what tags are currently applied by viewing your Worker versions:
+
+```bash
+npx wrangler versions list
+```
+
+2. **Use fewer tags when uploading new versions** - The `--tag` flag on `wrangler versions upload` adds a tag to identify the version:
+
+```bash
+# Use concise, meaningful tags
+npx wrangler versions upload --tag "prod-v2"
+```
+
+3. **Consolidate tags** - Combine related information into fewer, more meaningful tags:
+   - Instead of separate uploads with: `"env-prod"`, `"region-us"`, `"team-backend"`
+   - Consider a single descriptive tag: `"prod-us-backend"`
+
+4. **Use naming conventions** - Encode information in your Worker name or version messages instead of tags when possible:
+
+```bash
+npx wrangler versions upload --message "Production release for US region"
+```
+
+---
+
+**See also:** [Error 100102](/workers/platform/error-codes/100102/)

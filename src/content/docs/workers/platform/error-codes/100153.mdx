@@ -1,0 +1,31 @@
+---
+pcx_content_type: reference
+title: "100153"
+head:
+  - tag: title
+    content: "Error 100153 - Invalid Binding Type"
+sidebar:
+  order: 100153
+  hidden: true
+---
+
+**Message:** Binding type (type) is not valid. Use a supported binding type and try again.
+
+**Category:** [Bindings - General](/workers/platform/error-codes/#bindings--general)
+
+**HTTP Status:** 400 Bad Request
+
+**When this occurs:**
+The binding type specified is not recognized.
+
+**Common binding types include:**
+
+- `kv_namespace` - Workers KV storage
+- `durable_object_namespace` - Durable Objects
+- `r2_bucket` - R2 object storage
+- `d1` - D1 database
+- `service` - Service binding to another Worker
+
+Refer to [Bindings](/workers/runtime-apis/bindings/) for an overview of all binding types, or [Multipart Upload Metadata - Bindings](/workers/configuration/multipart-upload-metadata/#bindings) for the complete API specification.
+
+---

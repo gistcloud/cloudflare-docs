@@ -1,0 +1,42 @@
+---
+pcx_content_type: reference
+title: "10097"
+head:
+  - tag: title
+    content: "Error 10097 - Free Plan Requires SQLite"
+sidebar:
+  order: 10097
+  hidden: true
+---
+
+**Message:** Durable Objects on the free plan require SQLite storage. Use 'new_sqlite_classes' instead of 'new_classes' in your migration configuration.
+
+**Category:** [Bindings - Durable Objects](/workers/platform/error-codes/#bindings--durable-objects)
+
+**HTTP Status:** 403 Forbidden
+
+**When this occurs:**
+Free plan accounts must use SQLite-backed Durable Objects. Refer to [Durable Objects migrations](/durable-objects/reference/durable-objects-migrations/) for plan-specific requirements.
+
+**How to fix:**
+
+Update your migration configuration:
+
+```jsonc
+{
+	"migrations": [
+		{
+			"tag": "v1",
+			// Required for free plan:
+			"new_sqlite_classes": ["MyDurableObject"],
+
+			// Only works on paid plan:
+			// "new_classes": ["MyDurableObject"]
+		},
+	],
+}
+```
+
+SQLite-backed Durable Objects provide persistent SQL storage and are recommended for all new projects. See [DO Migrations - Create](/durable-objects/reference/durable-objects-migrations/#create-migration) for details.
+
+---

@@ -1,0 +1,72 @@
+---
+pcx_content_type: reference
+title: "10069"
+head:
+  - tag: title
+    content: "Error 10069 - Unsupported Event Handler"
+sidebar:
+  order: 10069
+  hidden: true
+---
+
+**Message:** The uploaded Worker contains event handlers unsupported by the Workers runtime.
+
+import { TypeScriptExample } from "~/components";
+
+**Category:** [Scripts & Workers](/workers/platform/error-codes/#scripts-workers)
+
+**HTTP Status:** 400 Bad Request
+
+**When this occurs:**
+
+Your Worker exports an event handler that is not recognized or supported by the Workers runtime. This can happen when:
+
+- Using an event handler name that doesn't exist (typo or incorrect name)
+- Using an event handler that requires a specific configuration or binding
+- Using experimental handlers that are not yet generally available
+
+**Common handlers include:**
+
+- `fetch` - Handle HTTP requests
+- `scheduled` - Handle Cron Triggers
+- `queue` - Handle Queue messages
+
+Refer to [Event Handlers](/workers/runtime-apis/handlers/) for the complete list of supported handlers.
+
+**How to fix:**
+
+1. **Check handler names** - Ensure you're using the correct handler name:
+
+<TypeScriptExample>
+
+```ts
+export default {
+	// Correct handler names
+	async fetch(request, env, ctx): Promise<Response> {
+		return new Response("Hello!");
+	},
+
+	async scheduled(event, env, ctx): Promise<void> {
+		// Handle cron trigger
+	},
+
+	async queue(batch, env): Promise<void> {
+		// Handle queue messages
+	},
+} satisfies ExportedHandler<Env>;
+```
+
+</TypeScriptExample>
+
+2. **Verify required bindings** - Some handlers require specific bindings:
+   - `queue` handler requires a Queue consumer binding
+   - `alarm` handler is only valid in Durable Objects
+
+3. **Check for typos** - Common mistakes include:
+   - `handle` instead of `fetch`
+   - `cron` instead of `scheduled`
+   - `message` instead of `queue`
+
+4. **Review compatibility** - Some handlers may require specific [compatibility flags](/workers/configuration/compatibility-flags/)
+
+---

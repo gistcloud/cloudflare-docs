@@ -1,0 +1,85 @@
+---
+pcx_content_type: reference
+title: "10020"
+head:
+  - tag: title
+    content: "Error 10020 - Route Already Exists"
+sidebar:
+  order: 10020
+  hidden: true
+---
+
+**Message:** A route with this pattern already exists on this zone. Delete the existing route first, or use a different URL pattern.
+
+**Category:** [Routing](/workers/platform/error-codes/#routing)
+
+**HTTP Status:** 409 Conflict
+
+**When this occurs:**
+
+You're trying to create a route with a pattern that's already assigned to a Worker on this zone. Each route pattern can only be assigned to one Worker per zone.
+
+**How to fix:**
+
+1. **List existing routes** to find the conflict in the [Cloudflare dashboard](https://dash.cloudflare.com/?to=/:account/:zone/workers/routes) or via the API:
+
+```bash
+curl -X GET "https://api.cloudflare.com/client/v4/zones/{zone_id}/workers/routes" \
+  -H "Authorization: Bearer {api_token}"
+```
+
+Example response:
+
+```json
+{
+	"result": [
+		{
+			"id": "abc123def456",
+			"pattern": "example.com/api/*",
+			"script": "my-worker"
+		}
+	]
+}
+```
+
+2. **Delete the existing route** if it's no longer needed via the [Cloudflare dashboard](https://dash.cloudflare.com/?to=/:account/:zone/workers/routes) or the API:
+
+```bash
+curl -X DELETE "https://api.cloudflare.com/client/v4/zones/{zone_id}/workers/routes/{route_id}" \
+  -H "Authorization: Bearer {api_token}"
+```
+
+3. **Or update the existing route** to point to the new Worker by deleting it and redeploying:
+
+```bash
+# After deleting the old route via dashboard or API
+npx wrangler deploy
+```
+
+4. **Use a different route pattern** if both routes are needed:
+
+```jsonc
+// wrangler.jsonc
+{
+	"routes": [
+		// Instead of conflicting with example.com/api/*
+		{ "pattern": "example.com/api/v2/*", "zone_name": "example.com" },
+	],
+}
+```
+
+5. **Check for route conflicts in wrangler.jsonc** - Ensure you're not defining duplicate patterns:
+
+```jsonc
+{
+	"routes": [
+		// These would conflict:
+		{ "pattern": "example.com/*" },
+		{ "pattern": "example.com/*" }, // Remove duplicate
+	],
+}
+```
+
+---
+
+**See also:** [Routes](/workers/configuration/routing/routes/)

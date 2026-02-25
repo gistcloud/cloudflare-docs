@@ -1,0 +1,41 @@
+---
+pcx_content_type: reference
+title: "10022"
+head:
+  - tag: title
+    content: "Error 10022 - Invalid Route Pattern"
+sidebar:
+  order: 10022
+  hidden: true
+---
+
+**Message:** (validation details)
+
+**Category:** [Routing](/workers/platform/error-codes/#routing)
+
+**HTTP Status:** 400 Bad Request
+
+**When this occurs:**
+The route pattern is invalid or violates routing rules.
+
+**Pattern rules:**
+
+- Only `*` wildcard is supported (matches zero or more characters)
+- No infix wildcards: `example.com/*.jpg` is **invalid**
+- No query parameters: `example.com/?foo=*` is **invalid**
+- Hostname wildcards must be at start: `*example.com/*` or `*.example.com/*`
+- Pattern must include a hostname from your zone
+- All domains/subdomains must have DNS records in your zone
+
+**Examples:**
+
+| Pattern              | Valid | Notes                            |
+| -------------------- | ----- | -------------------------------- |
+| `example.com/*`      | Yes   | Matches all paths on root domain |
+| `*.example.com/*`    | Yes   | Matches all subdomains           |
+| `example.com/*.jpg`  | No    | Infix wildcards not allowed      |
+| `example.com/?foo=*` | No    | Query parameters not allowed     |
+
+Refer to [Route Matching Behavior](/workers/configuration/routing/routes/#matching-behavior) for detailed pattern documentation and additional examples.
+
+---
