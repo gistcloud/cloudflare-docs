@@ -26,7 +26,9 @@ const config = readFileSync("/bundle/config.txt", "utf8");
 writeFileSync("/tmp/abc.txt", "Hello, world!");
 ```
 
-The Workers Virtual File System (VFS) is a memory-based file system that allows
+## Virtual file system
+
+The Workers virtual file system (VFS) is a memory-based file system that allows
 you to read modules included in your Worker bundle as read-only files, access a
 directory for writing temporary files, or access common
 [character devices](https://linux-kernel-labs.github.io/refs/heads/master/labs/device_drivers.html) like
@@ -34,8 +36,7 @@ directory for writing temporary files, or access common
 
 The directory structure initially looks like:
 
-```
-
+```txt
 /bundle
 └── (one file for each module in your Worker bundle)
 /tmp
@@ -45,8 +46,9 @@ The directory structure initially looks like:
 ├── random
 ├── full
 └── zero
-
 ```
+
+### Read from the bundle
 
 The `/bundle` directory contains the files for all modules included in your
 Worker bundle, which you can read using APIs like `readFileSync` or
@@ -68,6 +70,8 @@ export default {
 };
 ```
 
+### Write temporary files
+
 The `/tmp` directory is writable, and you can use it to create temporary files
 or directories. You can also create symlinks in this directory. However, the
 contents of `/tmp` are not persistent and are unique to each request. This means
@@ -88,6 +92,8 @@ export default {
 };
 ```
 
+### Character devices
+
 The `/dev` directory contains common character devices:
 
 - `/dev/null`: A null device that discards all data written to it and returns
@@ -100,6 +106,8 @@ The `/dev` directory contains common character devices:
 - `/dev/zero`: A device that provides an infinite stream of zero bytes on reads
   and discards all data written to it.
 
+### VFS behavior and limits
+
 All operations on the VFS are synchronous. You can use the synchronous,
 asynchronous callback, or promise-based APIs provided by the `node:fs` module
 but all operations will be performed synchronously.
@@ -107,10 +115,10 @@ but all operations will be performed synchronously.
 Timestamps for files in the VFS are currently always set to the Unix epoch
 (`1970-01-01T00:00:00Z`). This means that operations that rely on timestamps,
 like `fs.stat`, will always return the same timestamp for all files in the VFS.
-This is a temporary limitation that will be addressed in a future release.
+This is a known limitation.
 
 Since all temporary files are held in memory, the total size of all temporary
-files and directories created count towards your Worker’s memory limit. If you
+files and directories created count towards your Worker's memory limit. If you
 exceed this limit, the Worker instance will be terminated and restarted.
 
 The file system implementation has the following limits:
@@ -119,9 +127,9 @@ The file system implementation has the following limits:
   separators. Because paths are handled as file URLs internally, the limit
   accounts for percent-encoding of special characters, decoding characters
   that do not need encoding before the limit is checked. For example, the
-  path `/tmp/abcde%66/ghi%zz' is 18 characters long because the `%66`does
-not need to be percent-encoded and is therefore counted as one character,
-while the`%zz` is an invalid percent-encoding that is counted as 3 characters.
+  path `/tmp/abcde%66/ghi%zz` is 18 characters long because the `%66` does
+  not need to be percent-encoded and is therefore counted as one character,
+  while the `%zz` is an invalid percent-encoding that is counted as 3 characters.
 - The maximum number of path segments is 48. For example, the path `/a/b/c` is
   3 segments.
 - The maximum size of an individual file is 128 MB total.
@@ -134,5 +142,15 @@ supported:
 - The `force` option in the `fs.rm` API has not yet been implemented.
 - Timestamps for files are always set to the Unix epoch (`1970-01-01T00:00:00Z`).
 - File permissions and ownership are not supported.
+
+## Use persistent storage with `node:fs`
+
+The built-in virtual file system is ephemeral — `/tmp` is cleared between requests, and `/bundle` is read-only. If you need persistent, durable file storage accessible through the standard `node:fs` API, you can build a custom `node:fs` shim that routes filesystem operations to Cloudflare storage services like [R2](/r2/) or [Durable Objects](/durable-objects/) based on path prefixes.
+
+This pattern uses [Wrangler module aliasing](/workers/wrangler/configuration/#module-aliasing) to replace `node:fs` imports with your own implementation. Your shim intercepts calls like `fs.readFile('/storage/file.txt')`, checks whether the path prefix matches a registered storage backend, and routes the operation accordingly. Paths that do not match any registered backend fall through to the built-in `node:fs` implementation.
+
+This is especially useful when you rely on npm packages that expect filesystem access. Instead of rewriting those libraries, you can route their `node:fs` calls to a Cloudflare storage backend.
+
+For a step-by-step walkthrough of how to build this, refer to [Mount persistent storage as a file system](/workers/tutorials/mount-persistent-storage-as-a-file-system/).
 
 The full `node:fs` API is documented in the [Node.js documentation for `node:fs`](https://nodejs.org/api/fs.html).
