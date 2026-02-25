@@ -1,5 +1,4 @@
 ---
-
 summary: Shows how to restrict access using the HTTP Basic schema.
 tags:
   - Security
@@ -284,40 +283,43 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         "/logout" => Response::error("Logged out.", 401),
         "/admin" => {
             // The "Authorization" header is sent when authenticated.
-            let authorization = req.headers().get("Authorization")?;
-            if authorization == None {
+            let Some(authorization) = req.headers().get("Authorization")? else {
                 let mut headers = Headers::new();
                 // Prompts the user for credentials.
                 headers.set(
                     "WWW-Authenticate",
-                    "Basic realm='my scope', charset='UTF-8'",
+                    "Basic realm=\"my scope\", charset=\"UTF-8\"",
                 )?;
                 return Ok(Response::error("You need to login.", 401)?.with_headers(headers));
-            }
-            let authorization = authorization.unwrap();
-            let auth: Vec<&str> = authorization.split(" ").collect();
-            let scheme = auth[0];
-            let encoded = auth[1];
+            };
 
             // The Authorization header must start with Basic, followed by a space.
-            if encoded == "" || scheme != "Basic" {
+            let mut parts = authorization.splitn(2, ' ');
+            let scheme = parts.next().unwrap_or("");
+            let encoded = parts.next().unwrap_or("");
+            if scheme != "Basic" || encoded.is_empty() {
                 return Response::error("Malformed authorization header.", 400);
             }
 
-            let buff = BASE64_STANDARD.decode(encoded).unwrap();
+            let buff = match BASE64_STANDARD.decode(encoded) {
+                Ok(b) => b,
+                Err(_) => return Response::error("Invalid base64 in authorization header.", 400),
+            };
             let credentials = String::from_utf8_lossy(&buff);
             // The username & password are split by the first colon.
             //=> example: "username:password"
-            let credentials: Vec<&str> = credentials.split(':').collect();
-            let user = credentials[0];
-            let pass = credentials[1];
+            let Some(index) = credentials.find(':') else {
+                return Response::error("Malformed credentials.", 400);
+            };
+            let user = &credentials[..index];
+            let pass = &credentials[index + 1..];
 
             if user != basic_user || pass != basic_pass {
                 let mut headers = Headers::new();
                 // Prompts the user for credentials.
                 headers.set(
                     "WWW-Authenticate",
-                    "Basic realm='my scope', charset='UTF-8'",
+                    "Basic realm=\"my scope\", charset=\"UTF-8\"",
                 )?;
                 return Ok(Response::error("You need to login.", 401)?.with_headers(headers));
             }
@@ -347,7 +349,6 @@ import { basicAuth } from "hono/basic-auth";
 // Define environment interface
 interface Env {
 	Bindings: {
-		USERNAME: string;
 		PASSWORD: string;
 	};
 }
@@ -359,12 +360,20 @@ app.get("/", (c) => {
 	return c.text("Anyone can access the homepage.");
 });
 
+// Logout route - invalidate credentials
+app.get("/logout", (c) => {
+	// Invalidate the "Authorization" header by returning a HTTP 401.
+	// We do not send a "WWW-Authenticate" header, as this would trigger
+	// a popup in the browser, immediately asking for credentials again.
+	return c.text("Logged out.", 401);
+});
+
 // Admin route - protected with Basic Auth
 app.get(
 	"/admin",
 	async (c, next) => {
 		const auth = basicAuth({
-			username: c.env.USERNAME,
+			username: "admin",
 			password: c.env.PASSWORD,
 		});
 
